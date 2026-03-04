@@ -5,207 +5,290 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <ctype.h>
 #include "web_guanli.h"
 
-#define zd_mk_shu 50
-#define zd_mingzi 100
-#define zd_lujing 256
+#define genmulu "./yuanma/cunfang/web"
 
-typedef struct
-{
-    char ming[zd_mingzi];   // 模块名称
-    char lujing[zd_lujing]; // 模块路径
-} mk_xinxi;
+yx_zhuangtai yx_mk_shu[zd_mk_shu];
+int jl_shu = 0;
 
-mk_xinxi mk_shuzu[zd_mk_shu]; // 模块数
-int mk_shu = 0;               // 记录数量
+int web_panduan(const char *mulu){
+    char compose_wj[zd_lujing];
+    snprintf(compose_wj,sizeof(compose_wj),"%s/docker-compose.yml",mulu);
 
-static int web_saomiao(void)
-{
-    mk_shu = 0;
+    return (access(compose_wj, F_OK) == 0);
+}
 
-    DIR *mulu = opendir("./yuanma/gongneng/web_mod/");
-    if (mulu == NULL)
-    {
-        perror("无法打开目录");
+int web_saomiao(const char *mulu,jg *mk_shuzu,int zd_shu){
+    int jl_jb_shu = 0;
+
+    DIR *dir = opendir(mulu);
+    if (dir == NULL){
+        perror("文件夹下没有内容");
         return 0;
     }
 
     struct dirent *jinru;
-    // 排除.和..文件夹
-    while ((jinru = readdir(mulu)) != NULL && mk_shu < zd_mk_shu)
-    {
-        if (jinru->d_type != DT_DIR) {
-            continue;
-        }
-        if (strcmp(jinru->d_name, ".") == 0 ||
-            strcmp(jinru->d_name, "..") == 0 ||
-            jinru->d_name[0] == '.')
-        {
+    while ((jinru = readdir(dir)) != NULL && jl_jb_shu < zd_shu){
+        if (jinru->d_name[0] == '.'){
             continue;
         }
 
-        // 检查是否存在docker compose
-        char jiancha[zd_lujing];
-        snprintf(jiancha, sizeof(jiancha), "./yuanma/gongneng/web_mod/%s/docker-compose.yml", jinru->d_name);
-
-        if (access(jiancha, F_OK) == 0)
-        {
-            snprintf(mk_shuzu[mk_shu].ming, zd_mingzi, "%s", jinru->d_name);
-            snprintf(mk_shuzu[mk_shu].lujing, zd_lujing, "./yuanma/gongneng/web_mod/%s", jinru->d_name);
-            mk_shu++;
+        if(jinru->d_type != DT_DIR){
+            continue;
         }
-        else
-        {
-            printf("模块 %s 缺少 docker-compose.yml 文件，跳过。\n", jinru->d_name);
-        }
-    }
-    closedir(mulu);
+        char compose_mulu[zd_lujing];
+        snprintf(compose_mulu,sizeof(compose_mulu),"%s/%s",mulu,jinru->d_name);
 
-    if (mk_shu == 0)
-    {
-        printf("未发现任何web漏洞模块，请添加模块到 ./yuanma/gongneng/web_mod/ 目录下。\n");
-        return 0;
+        if(web_panduan(compose_mulu)){
+            mk_shuzu[jl_jb_shu].lx = mk;
+        }else{
+            mk_shuzu[jl_jb_shu].lx = ml;
+        }
+
+        strncpy(mk_shuzu[jl_jb_shu].ming, jinru->d_name, zd_mingzi - 1);
+        mk_shuzu[jl_jb_shu].ming[zd_mingzi - 1] = '\0';
+
+        strncpy(mk_shuzu[jl_jb_shu].lujing,compose_mulu,zd_lujing - 1);
+        mk_shuzu[jl_jb_shu].lujing[zd_lujing - 1] = '\0';
+        jl_jb_shu++;
     }
-    else
-    {
-        return mk_shu;
-    }
+    closedir(dir);
+    return jl_jb_shu;
 }
 
-void web_liebiao(void){
-    web_saomiao();
-    printf("发现以下web漏洞模块：\n");
-    for (int i = 0; i < mk_shu; i++)
-    {
-        printf("%d. 模块名称: %s, 模块路径: %s\n", i + 1, mk_shuzu[i].ming, mk_shuzu[i].lujing);
-    }
-}
-
-void web_qidong(int xuhao){
-    web_saomiao();
-    if (xuhao < 1 || xuhao > mk_shu){
-        printf("无效的选择，请选择1到%d之间的数字。\n", mk_shu);
+void web_mk_yunxing(const char *ming,const char *mulu){
+    if(!web_panduan(mulu)){
+        printf("目录 %s 不是有效的Web项目，无法启动。\n", mulu);
         return;
     }
 
-    int suoyin = xuhao - 1;
     char mingling[512];
+    snprintf(mingling, sizeof(mingling), "cd %s && docker compose up -d", mulu);
+    printf("正在启动模块...");
+    int jieguo = system(mingling);
 
-    snprintf(mingling,sizeof(mingling),"cd %s && docker compose up -d",mk_shuzu[suoyin].lujing);
-    printf("正在启动模块 %s...\n",mk_shuzu[suoyin].ming);
-    system(mingling);
-    printf("模块 %s 已启动完成。\n",mk_shuzu[suoyin].ming);
+    if(jieguo==0){
+        printf("模块 %s 启动成功！\n", ming);
+    }
+    else{
+        printf("模块 %s 启动失败，请检查错误信息。\n", ming);
+    }
 
-    char compose_wenjian[zd_lujing];
-    snprintf (compose_wenjian, sizeof(compose_wenjian), "%sdocker-compose.yml", mk_shuzu[suoyin].lujing);
+    snprintf(mingling,sizeof(mingling),"cd %s && docker compose ps -q",mulu);
+    FILE *pipe = popen(mingling, "r");
+    char docker_id[dokcer_id];
+    if(pipe){
+        if(fgets(docker_id, sizeof(docker_id), pipe)){
+            docker_id[strcspn(docker_id, "\n")] = 0;
+        }
+        pclose(pipe);
+    }
 
-    FILE *wenjian = fopen(compose_wenjian,"r");
-    if(wenjian){
-        char hang[256];
-        while(fgets(hang,sizeof(hang),wenjian)){
-            if(strstr(hang,"ports:")){
-                printf("模块端口信息 %s" ,hang);
+    if(strlen(docker_id) > 0){
+        web_wj_chuangjian(mulu,docker_id);
+    }
+    
+    if(jl_shu<zd_mk_shu){
+        strncpy(yx_mk_shu[jl_shu].ming, ming ,zd_mingzi-1);
+        strncpy(yx_mk_shu[jl_shu].lujing, mulu ,zd_lujing-1);
+        snprintf(yx_mk_shu[jl_shu].docker_id, sizeof(yx_mk_shu[jl_shu].docker_id), "%s", docker_id);
+        strcpy(yx_mk_shu[jl_shu].zt, "运行中");
+        yx_mk_shu[jl_shu].sj = time(NULL);
+        jl_shu++;
+    }
+
+    char compose_wj[zd_lujing];
+    snprintf(compose_wj,sizeof(compose_wj),"%s/docker-compose.yml",mulu);
+    
+    FILE *fp = fopen(compose_wj, "r");
+    if(fp){
+        char dk[512];
+        int zhaodao = 0;
+        while (fgets(dk, sizeof(dk), fp)){
+            if(strstr(dk, "ports:") || strstr(dk, "-\"")){
+                printf("%s", dk);
+                zhaodao = 1;
             }
         }
-        fclose(wenjian);
+        if(!zhaodao){
+            printf("未找到端口映射信息，请检查docker-compose.yml文件。\n");
+        }
+        fclose(fp);
     }else{
-        printf("无法打开 %s 文件以读取端口信息。\n",compose_wenjian);
+        printf("无法打开文件 %s 以读取端口信息。\n", compose_wj);
     }
 }
 
-//停止模块
-void web_tingzhi(int xuhao){
-    web_saomiao();
-
-    int suoyin = xuhao - 1;
+void web_mk_tingzhi(int suoyin){
+    if(suoyin < 0 || suoyin >= jl_shu){
+        printf("无效的索引，无法停止模块。\n");
+        return;
+    }
     char mingling[512];
-    snprintf(mingling,sizeof(mingling),"cd %s && docker compose down",mk_shuzu[suoyin].lujing);
-    printf("正在停止模块 %s...\n",mk_shuzu[suoyin].ming);
+    snprintf(mingling,sizeof(mingling),"cd %s && docker compose down",yx_mk_shu[suoyin].lujing);
+    printf("正在停止模块...");
     int jieguo = system(mingling);
     if(jieguo == 0){
-        printf("模块 %s 已成功停止。\n",mk_shuzu[suoyin].ming);
+        printf("模块 %s 停止成功！\n", yx_mk_shu[suoyin].ming);
+        web_wj_shanchu(yx_mk_shu[suoyin].lujing);
+        for(int i=suoyin; i<jl_shu-1; i++){
+            yx_mk_shu[i] = yx_mk_shu[i+1];
+        }
+        jl_shu--;
     }else{
-        printf("停止模块失败代码 %d 。\n",jieguo);
+        printf("模块 %s 停止失败，请检查错误信息。\n", yx_mk_shu[suoyin].ming);
     }
 }
 
-//检查模块
-void web_zhuangtai(int xuhao){
-    web_saomiao();
+void web_mk_zt_gengxin(void){
+    for (int i = 0; i < jl_shu;i++){
+        char mingling[512];
+        snprintf(mingling,sizeof(mingling),"docker ps -q --filter \"id=%s\" | grep -c",yx_mk_shu[i].docker_id);
+        FILE *guan = popen(mingling, "r");
 
-    int suoyin = xuhao - 1;
+        if(guan){
+            char jieguo[16];
+            if(fgets(jieguo,sizeof(jieguo),guan)){
+                if(atoi(jieguo) == 0){
+                    web_wj_shanchu(yx_mk_shu[i].lujing);
 
-    printf("正在检查模块 %s 的状态...\n",mk_shuzu[suoyin].ming);
-    char mingling[512];
-    snprintf(mingling,sizeof(mingling),"cd %s && docker compose ps | grep -c 'Up'",mk_shuzu[suoyin].lujing);
+                    for(int j=i; j<jl_shu-1; j++){
+                        yx_mk_shu[j] = yx_mk_shu[j+1];
+                    }
+                    jl_shu--;
+                    i--;
+                }
+            }
+        }
+        pclose(guan);
+    }
+}
 
-    FILE *gd = popen(mingling,"r");
-    char shuchu[100];
+void web_wj_chuangjian(const char *mulu,const char *docker_id){
+    char wj_lujing[zd_lujing];
+    snprintf(wj_lujing,sizeof(wj_lujing),"%s/.running",mulu);
+    FILE *fp = fopen(wj_lujing, "w");
+    if(fp){
+        fprintf(fp, "%s|%ld",docker_id,time(NULL));
+        fclose(fp);
+        printf(" 标记文件创建成功");
+    }
+}
 
-    if(fgets(shuchu,sizeof(shuchu),gd)){
-        int jilu = atoi(shuchu);
-        if(jilu > 0){
-            printf("有%s个容器正在运行。\n",shuchu);
-        }else{
-        printf("所有容器均未运行。\n");
+void web_wj_shanchu(const char *mulu){
+    char mingling[zd_lujing];
+    snprintf(mingling,sizeof(mingling),"%s/.running",mulu);
+    unlink(mingling);
+}
+
+char* web_wj_duqu(const char *mulu){
+    static char docker_id[dokcer_id];
+    docker_id[0] = '\0';
+
+    char wj_lujing[zd_lujing];
+    snprintf(wj_lujing,sizeof(wj_lujing),"%s/.running",mulu);
+
+    FILE *fp = fopen(wj_lujing, "r");
+    if(fp){
+        char hang[256];
+        if(fgets(hang,sizeof(hang),fp)){
+            char *token = strtok(hang, "|");
+            if(token){
+                strncpy(docker_id, token, dokcer_id - 1);
+                docker_id[dokcer_id - 1] = '\0';
+            }           
+        }
+        fclose(fp);
+    }
+    return docker_id;
+}
+
+void web_mk_yx_zonglan(void){
+    web_mk_zt_gengxin();
+
+    printf("\n=== 运行模块总览 ===\n");
+    if(jl_shu == 0){
+        printf("当前没有运行中的模块。\n");
+        return;
+    }
+
+    for(int i=0; i<jl_shu; i++){
+        char jian_id[13];
+        strncpy(jian_id, yx_mk_shu[i].docker_id, 12);
+        jian_id[12] = '\0';
+
+        char shijian[50];
+        struct tm *tm_info = localtime(&yx_mk_shu[i].sj);
+        strftime(shijian, sizeof(shijian), "%H:%M:%S", tm_info);
+
+        printf("模块名称: %s | 状态: %s | Docker ID: %s... | 启动时间: %s\n",
+               yx_mk_shu[i].ming,
+               yx_mk_shu[i].zt,
+               jian_id,
+               shijian);
+    }
+}
+
+static void dg_saomiao(const char *mulu){
+    DIR *dir = opendir(mulu);
+    if (dir == NULL){
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL){
+        if(entry->d_name[0]=='.'){
+            if(strcmp(entry->d_name,".running") == 0){
+                char *docker_id = web_wj_duqu(mulu);
+                if(strlen(docker_id)>0 && jl_shu < zd_mk_shu){
+                    char *lujing = strrchr(mulu,'/');
+                    char ming[zd_mingzi];
+                    if(lujing){
+                        strncpy(ming,lujing + 1,zd_mingzi - 1);
+                    }else{
+                        strncpy(ming,mulu,zd_mingzi - 1);
+                    }
+                    ming[zd_mingzi - 1] = '\0';
+
+                    strncpy(yx_mk_shu[jl_shu].ming, ming, zd_mingzi - 1);
+                    strncpy(yx_mk_shu[jl_shu].lujing, mulu,zd_lujing -1);
+                    strncpy(yx_mk_shu[jl_shu].docker_id, docker_id, docker_id - 1);
+                    strcpy(yx_mk_shu[jl_shu].zt,"运行中");
+
+                    char wj_lujing[zd_lujing];
+                    snprintf(wj_lujing,sizeof(wj_lujing),"%s/.running",mulu);
+                    FILE *fp = fopen(wj_lujing,"r");
+                    if(fp){
+                        char hang[256];
+                        if(fgets(hang,sizeof(hang),fp)){
+                            char *token = strtok(hang,"|");
+                            if(token) token = strtok(NULL,"|");
+                            if(token) yx_mk_shu[jl_shu].sj = atol(token);
+                        }
+                        fclose(fp);
+                    }
+                    jl_shu++;
+            }
+        }
+    continue;
+    }
+        if(entry->d_type == DT_DIR){
+            char xin_lujing[zd_lujing];
+            snprintf(xin_lujing, sizeof(xin_lujing), "%s/%s", mulu, entry->d_name);
+            dg_saomiao(xin_lujing);
         }
     }
-    pclose(gd); 
+    closedir(dir);
 }
 
-//web管理器主菜单
+void web_mk_zhuangtai_jiazai(void){
+    jl_shu = 0;
+    dg_saomiao(genmulu);
+}
+
 void web_guanli(void){
-    int xuanze;
-    int mk_xuhao;
-
-    while(1){
-        printf("\n=== Web漏洞管理器 ===\n");
-        printf("1. 列出所有漏洞模块\n");
-        printf("2. 启动漏洞模块\n");
-        printf("3. 停止漏洞模块\n");
-        printf("4. 查看模块状态\n");
-        printf("0. 返回主菜单\n");
-        printf("请选择: ");
-
-            
-    if(scanf("%d",&xuanze) != 1){
-        printf("输入无效，请输入数字。\n");
-        while(getchar() != '\n');
-        continue;
-      }
-    
-     switch(xuanze){
-        case 1:
-            web_liebiao();
-            break;
-        case 2:
-            web_liebiao();
-            printf("请输入要启动的模块编号: ");
-            scanf("%d",&mk_xuhao);
-            web_qidong(mk_xuhao);
-            break;
-        case 3:
-            web_liebiao();
-            printf("请输入要停止的模块编号: ");
-            scanf("%d",&mk_xuhao);
-            web_tingzhi(mk_xuhao);
-            break;
-        case 4:
-            web_liebiao();
-            printf("请输入要检查的模块编号: ");
-            scanf("%d",&mk_xuhao);
-            web_zhuangtai(mk_xuhao);
-            break;
-        case 0:
-            return;
-        default:
-            printf("无效选择，请重新输入。\n");
-        }
-        // 按任意键继续
-        printf("\n按回车键继续...");
-        while(getchar() != '\n')  // 清除缓冲区
-        getchar();  // 等待回车
-    }
 
 }
